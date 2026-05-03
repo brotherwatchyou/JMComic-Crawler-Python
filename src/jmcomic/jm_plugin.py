@@ -1352,3 +1352,126 @@ class DownloadCoverPlugin(JmOptionPlugin):
             self.log(f'album-{album_id}的封面已存在，跳过下载: [{save_path}]', 'skip')
             return
         downloader.client.download_album_cover(album_id, save_path, size)
+
+
+class JmWebUIPlugin(JmOptionPlugin):
+    """
+    Web管理界面插件，提供订阅管理、下载管理、浏览、搜索等功能。
+    服务器的代码位于一个独立库：plugin_jm_webui，需要独立安装。
+    安装命令：pip install plugin_jm_webui
+    源代码仓库：https://github.com/hect0x7/plugin-jm-webui
+    """
+    plugin_key = 'jm_webui'
+
+    default_run_kwargs = {
+        'host': '0.0.0.0',
+        'port': 9801,
+    }
+
+    from threading import Lock
+    single_instance_lock = Lock()
+
+    def __init__(self, option: JmOption):
+        super().__init__(option)
+        self.running = False
+        self.server_thread = None
+
+    def invoke(self,
+               host='0.0.0.0',
+               port=9801,
+               password='',
+               debug=False,
+               db_path='',
+               run=None,
+               **kwargs
+               ):
+        """
+        :param host: 监听地址
+        :param port: 监听端口
+        :param password: WebUI访问密码（可选）
+        :param debug: 调试模式
+        :param db_path: SQLite数据库路径（默认 ~/.jmcomic/webui.db）
+        :param run: uvicorn启动参数
+        :param kwargs: 传递给plugin_jm_webui的额外参数
+        """
+        if self.running:
+            return
+
+        import threading
+        import atexit
+
+        # 导入独立库
+        try:
+            import plugin_jm_webui
+        except ImportError:
+            self.warning_lib_not_install('plugin_jm_webui')
+            return
+
+        self.log(f'plugin_jm_webui version: {plugin_jm_webui.__version__}')
+
+        # 创建FastAPI应用
+        app = plugin_jm_webui.create_app(
+            option=self.option,
+            web_password=password,
+            db_path=db_path,
+        )
+
+        # 合并启动参数
+        run_kwargs = dict(self.default_run_kwargs)
+        run_kwargs['host'] = host
+        run_kwargs['port'] = int(port)
+        if run is not None:
+            run_kwargs.update(run)
+
+        # 启动uvicorn服务器
+        import uvicorn
+        run_kwargs['loop'] = 'asyncio'
+        config = uvicorn.Config(app, **run_kwargs, log_level='info')
+        server = uvicorn.Server(config)
+
+        if debug:
+            # debug模式必须在主线程运行
+            if threading.current_thread() is not threading.main_thread():
+                self.log('debug模式必须在主线程运行，当前非主线程，跳过启动', 'error')
+                return
+            self.enter_wait_list()
+            server.run()
+        else:
+            # 非debug模式在守护线程中启动
+            def run_server():
+                self.enter_wait_list()
+                server.run()
+
+            self.server_thread = threading.Thread(target=run_server, daemon=True)
+            self.server_thread.start()
+            self.running = True
+            self.log(f'WebUI已启动: http://{host}:{port}')
+
+    def wait_server_stop(self, proactive=False):
+        if self.server_thread is None:
+            return
+
+        if proactive:
+            import signal
+            try:
+                self.server_thread.join(timeout=0.5)
+            except KeyboardInterrupt:
+                pass
+        else:
+            while self.server_thread.is_alive():
+                try:
+                    self.server_thread.join(timeout=0.5)
+                except KeyboardInterrupt:
+                    break
+
+        self.running = False
+
+    def wait_until_finish(self):
+        self.wait_server_stop(proactive=True)
+
+    @classmethod
+    def build(cls, option: JmOption) -> 'JmOptionPlugin':
+        with cls.single_instance_lock:
+            if not hasattr(cls, 'single_instance'):
+                cls.single_instance = super().build(option)
+            return cls.single_instance
