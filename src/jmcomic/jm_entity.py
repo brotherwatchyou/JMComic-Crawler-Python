@@ -500,6 +500,11 @@ class JmAlbumDetail(DetailEntity, Downloadable):
         self.related_list = related_list
 
     @property
+    def is_completed(self) -> bool:
+        """是否已完结，通过 tags 中是否包含'完結'判断"""
+        return '完結' in self.tags
+
+    @property
     def author(self):
         """
         作者
