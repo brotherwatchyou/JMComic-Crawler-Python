@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}书架 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="bookshelfPage()">
+    <div class="page-header">
+        <h2>书架</h2>
+        <div class="header-actions">
+            <input type="text" x-model="addId" placeholder="输入漫画ID" class="input-sm"
+                   @keydown.enter="addAndDownload()">
+            <button class="btn btn-primary" @click="addAndDownload()" :disabled="!addId || adding">
+                <span x-show="!adding">订阅并下载</span>
+                <span x-show="adding">添加中...</span>
+            </button>
+            <button class="btn btn-secondary" @click="importFavorites()" :disabled="importing">
+                <span x-show="!importing">收藏夹导入</span>
+                <span x-show="importing">导入中...</span>
+            </button>
+            <button class="btn btn-secondary" @click="checkAll()" :disabled="checking">
+                <span x-show="!checking">检查更新</span>
+                <span x-show="checking">检查中...</span>
+            </button>
+            <button class="btn btn-secondary" @click="repairData()" :disabled="repairing">
+                <span x-show="!repairing">一键修复</span>
+                <span x-show="repairing">修复中...</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Filter tabs -->
+    <div class="filter-tabs" x-show="bookshelf.length > 0">
+        <button class="filter-tab" :class="{'active': filter === 'all'}" @click="filter = 'all'">
+            全部 (<span x-text="bookshelf.length"></span>)
+        </button>
+        <button class="filter-tab" :class="{'active': filter === 'has_update'}" @click="filter = 'has_update'">
+            有更新 (<span x-text="bookshelf.filter(i => i.has_update).length"></span>)
+        </button>
+        <button class="filter-tab" :class="{'active': filter === 'downloaded'}" @click="filter = 'downloaded'">
+            已下载 (<span x-text="bookshelf.filter(i => i.is_downloaded).length"></span>)
+        </button>
+        <button class="filter-tab" :class="{'active': filter === 'not_downloaded'}" @click="filter = 'not_downloaded'">
+            未下载 (<span x-text="bookshelf.filter(i => !i.is_downloaded).length"></span>)
+        </button>
+    </div>
+
+    <!-- Album grid -->
+    <div class="album-grid" x-show="filteredBookshelf.length > 0">
+        <template x-for="item in filteredBookshelf" :key="item.album_id">
+            <div class="album-card" @click="goToAlbum(item.album_id)">
+                <div class="album-cover">
+                    <img :src="`/api/browse/cover/${item.album_id}`" :alt="item.title"
+                         @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'"
+                         style="width:100%;height:100%;object-fit:cover;">
+                    <span class="album-id" style="display:none" x-text="item.album_id"></span>
+                    <span class="badge badge-info" x-show="item.is_completed" style="position:absolute;top:8px;right:8px;">已完结</span>
+                    <span class="badge badge-warn" x-show="item.has_update" style="position:absolute;top:8px;left:8px;">有更新</span>
+                </div>
+                <div class="album-info">
+                    <h3 x-text="item.title"></h3>
+                    <p x-text="item.author ? `作者: ${item.author}` : ''"></p>
+                    <p x-show="item.is_downloaded" x-text="`${item.chapter_count} 章`"></p>
+                    <p x-show="!item.is_downloaded" class="text-muted">点击查看</p>
+                </div>
+                <div class="album-card-actions" @click.stop>
+                    <button class="btn btn-sm btn-secondary" @click="checkOne(item.album_id)" title="检查更新">检查</button>
+                    <button class="btn btn-sm btn-primary" x-show="item.has_update"
+                            @click="downloadUpdates(item.album_id, item.new_photo_ids)" title="下载更新">更新</button>
+                    <label class="toggle" title="自动下载">
+                        <input type="checkbox" :checked="item.auto_download"
+                               @change="toggleAutoDownload(item)">
+                    </label>
+                    <button class="btn btn-sm btn-danger" @click="removeSubscription(item.album_id)" title="删除订阅">删</button>
+                </div>
+            </div>
+        </template>
+    </div>
+    <p x-show="filteredBookshelf.length === 0 && bookshelf.length > 0" class="text-muted">没有符合条件的订阅</p>
+    <p x-show="bookshelf.length === 0" class="text-muted">书架为空，请添加漫画ID订阅并下载</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function bookshelfPage() {
+    return {
+        bookshelf: [],
+        addId: '',
+        adding: false,
+        checking: false,
+        importing: false,
+        repairing: false,
+        filter: 'all',
+
+        async init() { await this.loadBookshelf(); },
+
+        async loadBookshelf() {
+            try {
+                const resp = await fetch('/api/browse/bookshelf');
+                this.bookshelf = await resp.json();
+            } catch (e) { this.bookshelf = []; }
+        },
+
+        get filteredBookshelf() {
+            if (this.filter === 'all') return this.bookshelf;
+            if (this.filter === 'has_update') return this.bookshelf.filter(i => i.has_update);
+            if (this.filter === 'downloaded') return this.bookshelf.filter(i => i.is_downloaded);
+            if (this.filter === 'not_downloaded') return this.bookshelf.filter(i => !i.is_downloaded);
+            return this.bookshelf;
+        },
+
+        goToAlbum(albumId) {
+            window.location.href = `/browse/${albumId}`;
+        },
+
+        async addAndDownload() {
+            if (!this.addId || this.adding) return;
+            this.adding = true;
+            try {
+                await fetch('/api/subscriptions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({album_id: this.addId, auto_download: true})
+                });
+                this.addId = '';
+                await this.loadBookshelf();
+            } catch (e) {} finally { this.adding = false; }
+        },
+
+        async checkAll() {
+            this.checking = true;
+            try {
+                await fetch('/api/subscriptions/check-all', {method: 'POST'});
+                await this.loadBookshelf();
+            } catch (e) {} finally { this.checking = false; }
+        },
+
+        async checkOne(albumId) {
+            try {
+                await fetch(`/api/subscriptions/${albumId}/check`, {method: 'POST'});
+                await this.loadBookshelf();
+            } catch (e) {}
+        },
+
+        async importFavorites() {
+            this.importing = true;
+            try {
+                const resp = await fetch('/api/subscriptions/import-favorites', {method: 'POST'});
+                const data = await resp.json();
+                if (data.ok) alert(`成功导入 ${data.imported.length} 部作品`);
+                await this.loadBookshelf();
+            } catch (e) {} finally { this.importing = false; }
+        },
+
+        async toggleAutoDownload(item) {
+            item.auto_download = !item.auto_download;
+            await fetch(`/api/subscriptions/${item.album_id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({auto_download: item.auto_download})
+            });
+        },
+
+        async removeSubscription(albumId) {
+            if (!confirm('确定删除此订阅？')) return;
+            await fetch(`/api/subscriptions/${albumId}`, {method: 'DELETE'});
+            await this.loadBookshelf();
+        },
+
+        async downloadUpdates(albumId, photoIds) {
+            if (!photoIds || photoIds.length === 0) return;
+            for (const pid of photoIds) {
+                await fetch(`/api/downloads/photo/${pid}`, {method: 'POST'});
+            }
+            // Clear update flag so badge disappears after download
+            await fetch(`/api/subscriptions/${albumId}/clear-update`, {method: 'POST'});
+            alert('已加入下载队列');
+            await this.loadBookshelf();
+        },
+
+        async repairData() {
+            this.repairing = true;
+            try {
+                const resp = await fetch('/api/browse/repair', {method: 'POST'});
+                const data = await resp.json();
+                if (data.ok) {
+                    const msg = [
+                        `扫描 ${data.scanned_dirs} 个目录, ${data.db_records} 条DB记录`,
+                        `新增 ${data.added.length} 条`,
+                        `更新 ${data.updated.length} 条`,
+                        `删除 ${data.removed.length} 条幽灵记录`,
+                        `${data.duplicates.length} 个重复映射`,
+                    ].join('\n');
+                    alert('修复完成:\n' + msg);
+                } else {
+                    alert('修复失败: ' + (data.error || '未知错误'));
+                }
+                await this.loadBookshelf();
+            } catch (e) { alert('修复失败'); } finally { this.repairing = false; }
+        }
+    }
+}
+</script>
+{% endblock %}

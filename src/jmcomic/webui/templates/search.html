@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}搜索 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="searchPage()">
+    <h2>搜索</h2>
+    <div class="search-bar">
+        <input type="text" x-model="query" @keydown.enter="doSearch()" placeholder="搜索漫画名称、作者..." class="input-lg">
+        <button class="btn btn-primary" @click="doSearch()" :disabled="loading">
+            <span x-show="!loading">搜索</span>
+            <span x-show="loading">搜索中...</span>
+        </button>
+    </div>
+
+    <div class="search-results" x-show="results.length > 0">
+        <template x-for="item in results" :key="item.album_id">
+            <div class="card search-card" @click="goToAlbum(item.album_id)">
+                <div class="search-card-content">
+                    <div class="search-card-cover">
+                        <img :src="`/api/browse/cover/${item.album_id}`" :alt="item.title"
+                             @error="$event.target.style.display='none'"
+                             loading="lazy">
+                    </div>
+                    <div class="search-card-info">
+                        <h3 x-text="item.title"></h3>
+                        <p><strong>作者:</strong> <span x-text="item.author || '-'"></span></p>
+                        <p x-show="item.category"><strong>分类:</strong> <span x-text="item.category"></span></p>
+                        <p x-show="item.tags && item.tags.length > 0"><strong>标签:</strong> <span x-text="item.tags.join(', ')"></span></p>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <button class="btn btn-sm btn-primary" @click.stop="downloadAlbum(item.album_id)">下载</button>
+                    <button class="btn btn-sm btn-secondary" @click.stop="addSubscription(item.album_id)">订阅</button>
+                </div>
+            </div>
+        </template>
+    </div>
+    <p x-show="searched && results.length === 0" class="text-muted">未找到结果</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function searchPage() {
+    return {
+        query: '',
+        results: [],
+        loading: false,
+        searched: false,
+        async doSearch() {
+            if (!this.query) return;
+            this.loading = true;
+            this.searched = true;
+            try {
+                const resp = await fetch(`/api/search?q=${encodeURIComponent(this.query)}`);
+                const data = await resp.json();
+                this.results = data.results || [];
+            } catch (e) { this.results = []; }
+            finally { this.loading = false; }
+        },
+        async downloadAlbum(albumId) {
+            await fetch(`/api/downloads/album/${albumId}`, {method: 'POST'});
+            alert('已加入下载队列');
+        },
+        async addSubscription(albumId) {
+            await fetch('/api/subscriptions', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({album_id: albumId, auto_download: true})
+            });
+            alert('已添加订阅');
+        },
+        goToAlbum(albumId) {
+            window.location.href = `/browse/${albumId}`;
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="dashboard()">
+    <h2>仪表盘</h2>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" x-text="stats.subscription_count">-</div>
+            <div class="stat-label">订阅数</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" x-text="stats.update_count">-</div>
+            <div class="stat-label">有更新</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" x-text="stats.downloading_count">-</div>
+            <div class="stat-label">下载中</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" x-text="stats.album_count">-</div>
+            <div class="stat-label">已下载</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>有更新的订阅</h3>
+        <template x-for="sub in updatedSubs" :key="sub.album_id">
+            <div class="card has-update">
+                <div class="card-header">
+                    <h3 x-text="sub.title || sub.album_id"></h3>
+                    <span class="badge">有更新</span>
+                </div>
+                <div class="card-body">
+                    <p><strong>作者:</strong> <span x-text="sub.author || '-'"></span></p>
+                    <p><strong>新章节:</strong> <span x-text="sub.new_photo_ids.join(', ')"></span></p>
+                </div>
+            </div>
+        </template>
+        <p x-show="updatedSubs.length === 0" class="text-muted">暂无更新</p>
+    </div>
+
+    <div class="section">
+        <h3>活跃下载</h3>
+        <template x-for="dl in activeDownloads" :key="dl.id">
+            <div class="card">
+                <div class="card-header">
+                    <h3 x-text="dl.jm_id"></h3>
+                    <span class="badge" x-text="dl.status"></span>
+                </div>
+                <div class="card-body">
+                    <div class="progress-bar">
+                        <div class="progress-fill" :style="`width: ${dl.progress_pct}%`"
+                             x-text="`${dl.progress_pct}%`"></div>
+                    </div>
+                </div>
+            </div>
+        </template>
+        <p x-show="activeDownloads.length === 0" class="text-muted">暂无活跃下载</p>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function dashboard() {
+    return {
+        stats: {subscription_count: '-', update_count: '-', downloading_count: '-', album_count: '-'},
+        updatedSubs: [],
+        activeDownloads: [],
+        async init() {
+            await this.refresh();
+            setInterval(() => this.refresh(), 10000);
+        },
+        async refresh() {
+            try {
+                const [subs, active, browse] = await Promise.all([
+                    fetch('/api/subscriptions').then(r => r.json()).catch(() => []),
+                    fetch('/api/downloads/active').then(r => r.json()).catch(() => []),
+                    fetch('/api/browse/albums').then(r => r.json()).catch(() => []),
+                ]);
+                this.stats.subscription_count = subs.length || 0;
+                this.stats.update_count = subs.filter(s => s.has_update).length || 0;
+                this.stats.downloading_count = active.length || 0;
+                this.stats.album_count = browse.length || 0;
+                this.updatedSubs = subs.filter(s => s.has_update);
+                this.activeDownloads = active;
+            } catch (e) {}
+        }
+    }
+}
+</script>
+{% endblock %}

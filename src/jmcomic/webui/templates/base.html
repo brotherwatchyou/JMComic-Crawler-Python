@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN" x-data="{ theme: localStorage.getItem('jm-theme') || 'dark' }" :data-theme="theme" x-init="$watch('theme', v => localStorage.setItem('jm-theme', v))">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}JMComic WebUI{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/vendor/htmx.min.js"></script>
+    <script src="/static/vendor/alpine.min.js" defer></script>
+</head>
+<body x-data="{ sidebarOpen: true }">
+    <nav class="sidebar" :class="{ 'collapsed': !sidebarOpen }">
+        <ul class="nav-links">
+            <li><a href="/" :class="{ active: window.location.pathname === '/' }"><span class="nav-link-icon">&#128218;</span><span class="nav-link-text">书架</span></a></li>
+            <li><a href="/downloads" :class="{ active: window.location.pathname === '/downloads' }"><span class="nav-link-icon">&#11015;&#65039;</span><span class="nav-link-text">下载管理</span></a></li>
+            <li><a href="/search" :class="{ active: window.location.pathname === '/search' }"><span class="nav-link-icon">&#128269;</span><span class="nav-link-text">搜索添加</span></a></li>
+            <li><a href="/settings" :class="{ active: window.location.pathname === '/settings' }"><span class="nav-link-icon">&#9881;&#65039;</span><span class="nav-link-text">设置</span></a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <button class="theme-toggle" @click="theme = theme === 'dark' ? 'light' : 'dark'">
+                <span class="theme-toggle-icon" x-text="theme === 'dark' ? '&#9728;' : '&#9790;'"></span>
+                <span class="nav-link-text" x-text="theme === 'dark' ? '浅色模式' : '深色模式'"></span>
+            </button>
+            <button class="toggle-btn" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? '收起侧栏' : '展开侧栏'">
+                <span x-text="sidebarOpen ? '&#9664;' : '&#9654;'"></span>
+            </button>
+        </div>
+    </nav>
+    <main class="content">
+        {% block content %}{% endblock %}
+    </main>
+    <div id="toast-container"></div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

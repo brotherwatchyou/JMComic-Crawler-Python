@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}设置 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="settingsPage()">
+    <h2>设置</h2>
+
+    <!-- Download settings -->
+    <div class="section">
+        <h3>下载设置</h3>
+        <div class="card">
+            <div class="form-group">
+                <label>下载根目录 (base_dir)</label>
+                <input type="text" x-model="download.base_dir" placeholder="/path/to/downloads">
+            </div>
+            <div class="form-group">
+                <label>路径规则 (dir_rule)</label>
+                <select x-model="download.dir_rule">
+                    <option value="Bd_Aid_Ptitle">漫画ID/章节标题</option>
+                    <option value="Bd_Aid_Pindextitle">漫画ID/序号+章节标题</option>
+                    <option value="Bd_Aauthor_Aid_Ptitle">作者/漫画ID/章节标题</option>
+                    <option value="Bd_Aauthor_Aid_Pindextitle">作者/漫画ID/序号+章节标题</option>
+                    <option value="Bd_Ptitle">章节标题</option>
+                    <option value="Bd_Aname_Ptitle">漫画名/章节标题</option>
+                    <option value="Bd_Aname_Pindextitle">漫画名/序号+章节标题</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>繁简归一化 (normalize_zh)</label>
+                <select x-model="download.normalize_zh">
+                    <option value="">不转换</option>
+                    <option value="zh-cn">转为简体</option>
+                    <option value="zh-tw">转为繁体</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>图片并发线程数</label>
+                <input type="number" x-model="download.image_thread_count" min="1" max="100">
+            </div>
+            <div class="form-group">
+                <label>章节并发线程数</label>
+                <input type="number" x-model="download.photo_thread_count" min="1" max="20">
+            </div>
+            <div class="form-group">
+                <label>解码图片（反混淆）</label>
+                <select x-model="download.image_decode">
+                    <option value="true">是</option>
+                    <option value="false">否</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>图片格式后缀</label>
+                <select x-model="download.image_suffix">
+                    <option value="">保持原格式</option>
+                    <option value=".jpg">JPG</option>
+                    <option value=".png">PNG</option>
+                    <option value=".webp">WebP</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>启用下载缓存（跳过已下载）</label>
+                <select x-model="download.download_cache">
+                    <option value="true">是</option>
+                    <option value="false">否</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" @click="saveDownload()" :disabled="saving">保存下载设置</button>
+        </div>
+    </div>
+
+    <!-- Client settings -->
+    <div class="section">
+        <h3>客户端设置</h3>
+        <div class="card">
+            <div class="form-group">
+                <label>客户端实现</label>
+                <select x-model="client.impl">
+                    <option value="api">API 客户端（推荐，兼容性好）</option>
+                    <option value="html">HTML 客户端（更快，但IP限制）</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>请求重试次数</label>
+                <input type="number" x-model="client.retry_times" min="0" max="20">
+            </div>
+            <div class="form-group">
+                <label>自定义域名（逗号分隔，留空用默认）</label>
+                <input type="text" x-model="client.domain" placeholder="18comic.vip,18comic.org">
+            </div>
+            <div class="form-group">
+                <label>代理地址</label>
+                <input type="text" x-model="client.proxy" placeholder="http://127.0.0.1:7890">
+            </div>
+            <div class="form-group">
+                <label>浏览器指纹 (impersonate)</label>
+                <select x-model="client.impersonate">
+                    <option value="chrome">Chrome</option>
+                    <option value="safari">Safari</option>
+                    <option value="edge99">Edge</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" @click="saveClient()" :disabled="saving">保存客户端设置</button>
+        </div>
+    </div>
+
+    <!-- Plugin settings -->
+    <div class="section">
+        <h3>插件设置</h3>
+        <div class="card">
+            <div class="form-group">
+                <label>插件异常处理策略</label>
+                <select x-model="plugin.valid">
+                    <option value="log">记录日志（默认）</option>
+                    <option value="ignore">忽略</option>
+                    <option value="raise">抛出异常</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" @click="savePlugin()" :disabled="saving">保存插件设置</button>
+        </div>
+    </div>
+
+    <!-- Scheduler settings -->
+    <div class="section">
+        <h3>定时检查设置</h3>
+        <div class="card">
+            <div class="form-group">
+                <label>检查间隔（分钟）</label>
+                <input type="number" x-model="scheduler.check_interval_minutes" min="5" max="1440">
+                <p class="text-muted" style="font-size:0.8rem;margin-top:0.25rem;">每隔多少分钟自动检查订阅更新</p>
+            </div>
+            <div class="form-group">
+                <label>跳过已完结作品</label>
+                <select x-model="scheduler.skip_completed">
+                    <option value="true">是</option>
+                    <option value="false">否</option>
+                </select>
+                <p class="text-muted" style="font-size:0.8rem;margin-top:0.25rem;">已完结作品不再定时检查更新</p>
+            </div>
+            <button class="btn btn-primary" @click="saveScheduler()" :disabled="saving">保存定时检查设置</button>
+        </div>
+    </div>
+
+    <!-- Save status -->
+    <div x-show="saveMsg" x-text="saveMsg" style="margin-top: 1rem; color: var(--success);"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function settingsPage() {
+    return {
+        download: {
+            base_dir: '', dir_rule: 'Bd_Aid_Ptitle', normalize_zh: '',
+            image_thread_count: 30, photo_thread_count: 4,
+            image_decode: 'true', image_suffix: '', download_cache: 'true',
+        },
+        client: {
+            impl: 'api', retry_times: 5, domain: '', proxy: '', impersonate: 'chrome',
+        },
+        plugin: { valid: 'log' },
+        scheduler: {
+            check_interval_minutes: 60,
+            skip_completed: 'false',
+        },
+        saving: false,
+        saveMsg: '',
+
+        async init() { await this.load(); },
+        async load() {
+            try {
+                const resp = await fetch('/api/settings');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.download = {
+                        base_dir: data.download.base_dir || '',
+                        dir_rule: data.download.dir_rule || 'Bd_Aid_Ptitle',
+                        normalize_zh: data.download.normalize_zh || '',
+                        image_thread_count: data.download.image_thread_count || 30,
+                        photo_thread_count: data.download.photo_thread_count || 4,
+                        image_decode: String(data.download.image_decode ?? true),
+                        image_suffix: data.download.image_suffix || '',
+                        download_cache: String(data.download.download_cache ?? true),
+                    };
+                    this.client = {
+                        impl: data.client.impl || 'api',
+                        retry_times: data.client.retry_times || 5,
+                        domain: Array.isArray(data.client.domain) ? data.client.domain.join(',') : (data.client.domain || ''),
+                        proxy: data.client.proxy || '',
+                        impersonate: data.client.impersonate || 'chrome',
+                    };
+                    this.plugin = { valid: data.plugin.valid || 'log' };
+                }
+            } catch (e) {}
+            // Load scheduler config separately
+            try {
+                const resp = await fetch('/api/settings/scheduler');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.scheduler = {
+                        check_interval_minutes: data.check_interval_minutes || 60,
+                        skip_completed: data.skip_completed ? 'true' : 'false',
+                    };
+                }
+            } catch (e) {}
+        },
+        async saveDownload() {
+            this.saving = true;
+            try {
+                await fetch('/api/settings/download', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        base_dir: this.download.base_dir || null,
+                        dir_rule: this.download.dir_rule,
+                        normalize_zh: this.download.normalize_zh || null,
+                        image_thread_count: Number(this.download.image_thread_count),
+                        photo_thread_count: Number(this.download.photo_thread_count),
+                        image_decode: this.download.image_decode === 'true',
+                        image_suffix: this.download.image_suffix || null,
+                        download_cache: this.download.download_cache === 'true',
+                    }),
+                });
+                this.showMsg('下载设置已保存');
+            } catch (e) { this.showMsg('保存失败'); } finally { this.saving = false; }
+        },
+        async saveClient() {
+            this.saving = true;
+            try {
+                await fetch('/api/settings/client', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        impl: this.client.impl,
+                        retry_times: Number(this.client.retry_times),
+                        domain: this.client.domain || null,
+                        proxy: this.client.proxy || null,
+                        impersonate: this.client.impersonate,
+                    }),
+                });
+                this.showMsg('客户端设置已保存');
+            } catch (e) { this.showMsg('保存失败'); } finally { this.saving = false; }
+        },
+        async savePlugin() {
+            this.saving = true;
+            try {
+                await fetch('/api/settings/plugin', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ valid: this.plugin.valid }),
+                });
+                this.showMsg('插件设置已保存');
+            } catch (e) { this.showMsg('保存失败'); } finally { this.saving = false; }
+        },
+        async saveScheduler() {
+            this.saving = true;
+            try {
+                await fetch('/api/settings/scheduler', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        check_interval_minutes: Number(this.scheduler.check_interval_minutes),
+                        skip_completed: this.scheduler.skip_completed === 'true',
+                    }),
+                });
+                this.showMsg('定时检查设置已保存，调度器已重启');
+            } catch (e) { this.showMsg('保存失败'); } finally { this.saving = false; }
+        },
+        showMsg(msg) {
+            this.saveMsg = msg;
+            setTimeout(() => { this.saveMsg = ''; }, 3000);
+        },
+    }
+}
+</script>
+{% endblock %}

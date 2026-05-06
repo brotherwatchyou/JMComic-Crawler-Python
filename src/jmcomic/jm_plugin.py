@@ -1357,9 +1357,7 @@ class DownloadCoverPlugin(JmOptionPlugin):
 class JmWebUIPlugin(JmOptionPlugin):
     """
     Web管理界面插件，提供订阅管理、下载管理、浏览、搜索等功能。
-    服务器的代码位于一个独立库：plugin_jm_webui，需要独立安装。
-    安装命令：pip install plugin_jm_webui
-    源代码仓库：https://github.com/hect0x7/plugin-jm-webui
+    需要安装可选依赖：pip install jmcomic[web]
     """
     plugin_key = 'jm_webui'
 
@@ -1392,25 +1390,23 @@ class JmWebUIPlugin(JmOptionPlugin):
         :param debug: 调试模式
         :param db_path: SQLite数据库路径（默认 ~/.jmcomic/webui.db）
         :param run: uvicorn启动参数
-        :param kwargs: 传递给plugin_jm_webui的额外参数
+        :param kwargs: 传递给webui的额外参数
         """
         if self.running:
             return
 
         import threading
-        import atexit
 
-        # 导入独立库
         try:
-            import plugin_jm_webui
-        except ImportError:
-            self.warning_lib_not_install('plugin_jm_webui')
+            from .webui import create_app, __version__
+        except ImportError as e:
+            self.warning_lib_not_install(f'webui 依赖（pip install jmcomic[web]）: {e}')
             return
 
-        self.log(f'plugin_jm_webui version: {plugin_jm_webui.__version__}')
+        self.log(f'jmcomic webui version: {__version__}')
 
         # 创建FastAPI应用
-        app = plugin_jm_webui.create_app(
+        app = create_app(
             option=self.option,
             web_password=password,
             db_path=db_path,
@@ -1424,20 +1420,22 @@ class JmWebUIPlugin(JmOptionPlugin):
             run_kwargs.update(run)
 
         # 启动uvicorn服务器
-        import uvicorn
+        try:
+            import uvicorn
+        except ImportError:
+            self.warning_lib_not_install('uvicorn（pip install jmcomic[web]）')
+            return
         run_kwargs['loop'] = 'asyncio'
         config = uvicorn.Config(app, **run_kwargs, log_level='info')
         server = uvicorn.Server(config)
 
         if debug:
-            # debug模式必须在主线程运行
             if threading.current_thread() is not threading.main_thread():
                 self.log('debug模式必须在主线程运行，当前非主线程，跳过启动', 'error')
                 return
             self.enter_wait_list()
             server.run()
         else:
-            # 非debug模式在守护线程中启动
             def run_server():
                 self.enter_wait_list()
                 server.run()

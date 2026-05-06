@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}漫画详情 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="albumDetail('{{ album_id }}')">
+    <a href="/" class="back-link">&larr; 返回书架</a>
+
+    <!-- Album header with cover -->
+    <div style="display:flex; gap:1.5rem; margin-bottom:1.5rem;">
+        <div style="width:180px; flex-shrink:0;">
+            <img :src="`/api/browse/cover/${album.album_id}`"
+                 style="width:100%; border-radius:var(--radius); border:1px solid var(--border);"
+                 @error="$event.target.style.display='none'">
+        </div>
+        <div style="flex:1; min-width:0;">
+            <h2 x-text="album.title || album.album_id || '加载中...'" style="margin-bottom:0.5rem;"></h2>
+            <p x-show="album.author" style="color:var(--text-muted); margin-bottom:0.3rem;">
+                作者: <span x-text="album.author"></span>
+            </p>
+            <p x-show="album.pub_date" style="color:var(--text-muted); margin-bottom:0.3rem; font-size:0.85rem;">
+                上架日期: <span x-text="album.pub_date"></span>
+            </p>
+            <p x-show="album.update_date" style="color:var(--text-muted); margin-bottom:0.3rem; font-size:0.85rem;">
+                更新日期: <span x-text="album.update_date"></span>
+            </p>
+            <div x-show="album.description" style="color:var(--text-muted); margin-bottom:0.8rem; font-size:0.85rem; line-height:1.6; white-space:pre-wrap;"
+                 x-text="album.description"></div>
+            <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.8rem; flex-wrap:wrap;">
+                <a x-show="firstDownloadedChapter"
+                   :href="`/reader/${album.album_id}/${firstDownloadedChapter.photo_id}`"
+                   class="btn btn-primary">开始阅读</a>
+                <button class="btn btn-secondary" @click="addSubscription()"
+                        :disabled="album.is_subscribed"
+                        x-text="album.is_subscribed ? '已订阅' : '添加订阅'"></button>
+                <button class="btn btn-secondary" @click="syncChapters()" :disabled="syncing">
+                    <span x-text="syncing ? '同步中...' : '同步章节'"></span>
+                </button>
+                <span class="badge badge-info" x-show="album.is_completed">已完结</span>
+                <span class="badge badge-ok" x-show="album.is_downloaded">已下载</span>
+                <span class="badge badge-warn" x-show="!album.is_downloaded">未下载</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download progress bar when downloading -->
+    <div class="card" x-show="downloadStatus && downloadStatus.status === 'downloading'" style="margin-bottom: 1rem;">
+        <div class="card-body">
+            <p>正在下载: <span x-text="downloadStatus.current_photo || '准备中...'"></span></p>
+            <p x-show="downloadStatus.current_image_index > 0">
+                已下载 <span x-text="downloadStatus.current_image_index"></span>
+                <span x-show="downloadStatus.total_images > 0" x-text="`/ ${downloadStatus.total_images} 张`"></span>
+            </p>
+        </div>
+        <div class="progress-bar" style="margin-top: 0.5rem;">
+            <div class="progress-fill" :style="`width: ${downloadStatus.progress_pct}%`"
+                 x-text="downloadStatus.progress_pct > 0 ? `${downloadStatus.progress_pct}%` : ''"></div>
+        </div>
+    </div>
+
+    <!-- Chapter list -->
+    <div class="section" x-show="chapters.length > 0">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+            <h3>章节列表 (<span x-text="chapters.length"></span> 章)</h3>
+            <button class="btn btn-sm btn-secondary" @click="sortAsc = !sortAsc">
+                <span x-text="sortAsc ? '正序 ▲' : '倒序 ▼'"></span>
+            </button>
+        </div>
+        <div class="chapter-grid">
+            <template x-for="ch in sortedChapters" :key="ch.photo_id">
+                <div class="chapter-card" :class="{'not-downloaded': !ch.is_downloaded}"
+                     @click="ch.is_downloaded ? goToReader(ch.photo_id) : downloadChapter(ch.photo_id)">
+                    <span class="chapter-title" x-text="ch.title || ch.photo_id"></span>
+                    <span class="badge badge-ok chapter-badge" x-show="ch.is_downloaded">已下载</span>
+                    <span class="badge badge-warn chapter-badge" x-show="!ch.is_downloaded">未下载</span>
+                    <button class="btn btn-sm btn-danger chapter-delete"
+                            x-show="ch.is_downloaded"
+                            @click.stop="deleteChapter(ch.photo_id)"
+                            title="删除此章节">✕</button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- No chapters yet - need to sync from server -->
+    <div class="section" x-show="chapters.length === 0 && !loading">
+        <div class="card" style="padding:2rem; text-align:center;">
+            <p style="color:var(--text-muted); margin-bottom:1rem;">
+                还没有同步章节列表，点击下方按钮从服务器获取。
+            </p>
+            <button class="btn btn-primary" @click="syncChapters()" :disabled="syncing">
+                <span x-text="syncing ? '同步中...' : '同步章节列表'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="card-actions" x-show="chapters.length > 0" style="margin-top: 1rem;">
+        <button class="btn btn-primary" @click="downloadAlbum()" :disabled="downloading"
+                x-show="!album.is_downloaded || chapters.some(ch => !ch.is_downloaded)">
+            <span x-show="!downloading">下载缺失章节</span>
+            <span x-show="downloading">下载中...</span>
+        </button>
+        <button class="btn btn-danger" @click="deleteAlbum()" x-show="album.is_downloaded">删除整个专辑</button>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+{% raw %}
+function albumDetail(albumId) {
+    return {
+        album: {album_id: albumId, title: '', author: '', is_downloaded: false, has_cached_chapters: false},
+        chapters: [],
+        sortAsc: true,
+        downloadStatus: null,
+        loading: true,
+        downloading: false,
+        syncing: false,
+        _pollTimer: null,
+        async init() {
+            await this.refresh();
+        },
+        get sortedChapters() {
+            const sorted = [...this.chapters].sort((a, b) => {
+                // Sort by photo_id (larger = newer)
+                const idA = parseInt(a.photo_id) || 0;
+                const idB = parseInt(b.photo_id) || 0;
+                return idA - idB;
+            });
+            return this.sortAsc ? sorted : sorted.reverse();
+        },
+        get firstDownloadedChapter() {
+            return this.sortedChapters.find(ch => ch.is_downloaded);
+        },
+        async refresh() {
+            this.loading = true;
+            try {
+                const resp = await fetch(`/api/browse/albums/${albumId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.album = data;
+                    this.chapters = (data.chapters || []).map(ch => ({...ch, _downloading: false}));
+                    this.downloadStatus = data.download_status || null;
+                    if (this.downloadStatus && this.downloadStatus.status === 'downloading') {
+                        this._startPolling();
+                    } else {
+                        this._stopPolling();
+                    }
+                }
+            } catch (e) {} finally { this.loading = false; }
+        },
+        async syncChapters() {
+            this.syncing = true;
+            try {
+                const resp = await fetch(`/api/browse/albums/${albumId}/sync-chapters`, {method: 'POST'});
+                if (resp.ok) {
+                    await this.refresh();
+                }
+            } catch (e) {} finally { this.syncing = false; }
+        },
+        _startPolling() {
+            this._stopPolling();
+            this._pollTimer = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/browse/albums/${albumId}/download-progress`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        // Update download status
+                        this.downloadStatus = data.download_status || null;
+                        // Update chapter download status from DB
+                        const downloaded = new Set(data.downloaded_photo_ids || []);
+                        for (const ch of this.chapters) {
+                            ch.is_downloaded = downloaded.has(ch.photo_id);
+                        }
+                        this.album.is_downloaded = this.chapters.some(ch => ch.is_downloaded);
+                        if (!this.downloadStatus || this.downloadStatus.status !== 'downloading') {
+                            this._stopPolling();
+                            // Final refresh from DB to get accurate image counts
+                            this.refresh();
+                        }
+                    }
+                } catch (e) {}
+            }, 2000);
+        },
+        _stopPolling() {
+            if (this._pollTimer) {
+                clearInterval(this._pollTimer);
+                this._pollTimer = null;
+            }
+        },
+        async downloadAlbum() {
+            this.downloading = true;
+            try {
+                await fetch(`/api/downloads/album/${albumId}`, {method: 'POST'});
+                this._startPolling();
+            } catch (e) {} finally { this.downloading = false; }
+        },
+        goToReader(photoId) {
+            window.location.href = `/reader/${this.album.album_id}/${photoId}`;
+        },
+        async downloadChapter(photoId) {
+            const ch = this.chapters.find(c => c.photo_id === photoId);
+            if (ch) ch._downloading = true;
+            try {
+                await fetch(`/api/downloads/photo/${photoId}`, {method: 'POST'});
+                this._startPolling();
+            } catch (e) {} finally {
+                if (ch) ch._downloading = false;
+            }
+        },
+        async addSubscription() {
+            if (this.album.is_subscribed) return;
+            await fetch('/api/subscriptions', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({album_id: albumId, auto_download: false})
+            });
+            this.album.is_subscribed = true;
+        },
+        async deleteChapter(photoId) {
+            if (!confirm('确定删除此章节？')) return;
+            try {
+                const resp = await fetch(`/api/downloads/album/${albumId}/photo/${photoId}`, {method: 'DELETE'});
+                if (resp.ok) {
+                    await this.refresh();
+                }
+            } catch (e) {}
+        },
+        async deleteAlbum() {
+            if (!confirm('确定删除整个专辑的所有下载数据？此操作不可恢复！')) return;
+            try {
+                const resp = await fetch(`/api/downloads/album/${albumId}`, {method: 'DELETE'});
+                if (resp.ok) {
+                    await this.refresh();
+                }
+            } catch (e) {}
+        }
+    }
+}
+{% endraw %}
+</script>
+{% endblock %}

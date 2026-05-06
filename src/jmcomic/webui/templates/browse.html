@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}浏览 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="browsePage()">
+    <h2>浏览已下载</h2>
+    <div class="album-grid" x-show="albums.length > 0">
+        <template x-for="album in albums" :key="album.album_id">
+            <a :href="`/browse/${album.album_id}`" class="album-card">
+                <div class="album-cover">
+                    <span class="album-id" x-text="album.album_id"></span>
+                </div>
+                <div class="album-info">
+                    <h3 x-text="album.title"></h3>
+                    <p x-text="`${album.chapter_count} 章`"></p>
+                </div>
+            </a>
+        </template>
+    </div>
+    <p x-show="albums.length === 0" class="text-muted">暂无已下载的漫画，下载后会自动出现在这里</p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function browsePage() {
+    return {
+        albums: [],
+        async init() {
+            try {
+                const resp = await fetch('/api/browse/albums');
+                this.albums = await resp.json();
+            } catch (e) { this.albums = []; }
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}下载管理 - JMComic WebUI{% endblock %}
+{% block content %}
+<div x-data="downloadsPage()">
+    <h2>下载管理</h2>
+
+    <!-- Download Queue -->
+    <div class="section">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+            <h3>下载队列</h3>
+            <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-sm btn-secondary" @click="cleanupStale()"
+                        x-show="queue.some(q => q.status === 'failed')" title="将卡住的任务标记为失败">清理无效任务</button>
+                <button class="btn btn-sm btn-secondary" @click="dismissAllDone()"
+                        x-show="queue.some(q => q.status === 'failed' || q.status === 'completed' || q.status === 'cancelled')"
+                        title="移除所有已完成/失败的任务">清除已结束</button>
+            </div>
+        </div>
+
+        <template x-for="item in queue" :key="item.id">
+            <div class="card download-item" :class="`status-${item.status}`" style="margin-bottom: 0.8rem;">
+                <div class="card-header" style="display:flex; align-items:center; justify-content:space-between;">
+                    <div style="display:flex; align-items:center; gap:0.5rem; min-width:0; flex:1;">
+                        <span class="badge" :class="{
+                            'badge-info': item.status === 'downloading',
+                            'badge-warn': item.status === 'pending',
+                            'badge-error': item.status === 'failed',
+                            'badge-ok': item.status === 'completed',
+                        }" x-text="statusText(item.status)"></span>
+                        <a :href="`/browse/${item.jm_id}`" class="download-title"
+                           x-text="item.title || item.jm_id"></a>
+                    </div>
+                    <span style="color:var(--text-muted); font-size:0.75rem; white-space:nowrap;"
+                          x-text="item.jm_type === 'album' ? '整本' : '单章'"></span>
+                </div>
+
+                <!-- Downloading state -->
+                <div class="card-body" x-show="item.status === 'downloading'">
+                    <div class="download-progress-info">
+                        <div class="download-progress-left">
+                            <template x-if="item.total_photos > 0">
+                                <span class="download-chapter-count">
+                                    章节 <strong x-text="item.downloaded_photos || 0"></strong>/<span x-text="item.total_photos"></span>
+                                </span>
+                            </template>
+                            <template x-if="item.current_photo">
+                                <span class="download-current-chapter">
+                                    <span x-text="item.current_photo"></span>
+                                </span>
+                            </template>
+                        </div>
+                        <template x-if="item.total_images > 0">
+                            <span class="download-image-count">
+                                <span x-text="item.current_image_index || 0"></span>/<span x-text="item.total_images"></span> 张
+                            </span>
+                        </template>
+                    </div>
+                    <div class="progress-bar" style="margin-top:0.5rem;">
+                        <div class="progress-fill" :style="`width: ${item.progress_pct || 0}%`"></div>
+                    </div>
+                    <div style="text-align:right; margin-top:0.3rem;">
+                        <span style="color:var(--primary); font-weight:600; font-size:0.9rem;"
+                              x-text="`${item.progress_pct || 0}%`"></span>
+                    </div>
+                </div>
+
+                <!-- Failed state -->
+                <div class="card-body" x-show="item.status === 'failed'">
+                    <p style="color:var(--error); font-size:0.85rem;" x-text="item.error_message || '未知错误'"></p>
+                </div>
+
+                <!-- Pending state -->
+                <div class="card-body" x-show="item.status === 'pending'">
+                    <p style="color:var(--text-muted); font-size:0.85rem;">等待下载...</p>
+                </div>
+
+                <!-- Completed state -->
+                <div class="card-body" x-show="item.status === 'completed'" style="padding:0.5rem 1rem;">
+                    <span style="color:var(--success); font-size:0.85rem;">
+                        下载完成
+                        <span x-show="item.total_images > 0" x-text="`(${item.total_images} 张图片)`"></span>
+                    </span>
+                </div>
+
+                <div class="card-actions">
+                    <button class="btn btn-sm btn-danger"
+                            x-show="item.status === 'pending' || item.status === 'downloading'"
+                            @click="cancelTask(item.id)">取消</button>
+                    <button class="btn btn-sm btn-primary"
+                            x-show="item.status === 'failed'"
+                            @click="retryTask(item)">重试</button>
+                    <button class="btn btn-sm btn-secondary"
+                            x-show="item.status === 'failed' || item.status === 'completed' || item.status === 'cancelled'"
+                            @click="dismissTask(item.id)">移除</button>
+                </div>
+            </div>
+        </template>
+
+        <div x-show="queue.length === 0" class="card" style="padding:2rem; text-align:center;">
+            <p style="color:var(--text-muted); margin:0;">队列为空</p>
+        </div>
+    </div>
+
+    <!-- Download History -->
+    <div class="section" style="margin-top:2rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+            <h3>下载历史</h3>
+            <button class="btn btn-sm btn-danger" @click="clearHistory()"
+                    x-show="history.length > 0">清空历史</button>
+        </div>
+
+        <div class="table-responsive" x-show="history.length > 0">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>标题</th>
+                        <th>类型</th>
+                        <th>状态</th>
+                        <th>图片数</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="item in history" :key="item.id">
+                        <tr>
+                            <td>
+                                <a :href="`/browse/${item.jm_id}`" style="color:var(--text); text-decoration:none;"
+                                   x-text="item.title || item.jm_id"></a>
+                            </td>
+                            <td x-text="item.jm_type === 'album' ? '整本' : '单章'"></td>
+                            <td>
+                                <span class="badge" :class="item.status === 'success' ? 'badge-ok' : 'badge-error'"
+                                      x-text="statusText(item.status)"></span>
+                            </td>
+                            <td x-text="item.downloaded_images > 0 ? item.downloaded_images : '-'"></td>
+                            <td x-text="formatTime(item.completed_at || item.created_at)"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <div x-show="history.length === 0" class="card" style="padding:2rem; text-align:center;">
+            <p style="color:var(--text-muted); margin:0;">暂无历史记录</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function downloadsPage() {
+    return {
+        queue: [],
+        history: [],
+        pollTimer: null,
+
+        async init() {
+            await this.refresh();
+            this.pollTimer = setInterval(() => this.refresh(), 1500);
+        },
+
+        destroy() {
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
+        },
+
+        async refresh() {
+            try {
+                const [q, h] = await Promise.all([
+                    fetch('/api/downloads/queue').then(r => r.json()).catch(() => []),
+                    fetch('/api/downloads/history').then(r => r.json()).catch(() => []),
+                ]);
+                this.queue = q;
+                this.history = h;
+            } catch (e) {}
+        },
+
+        async cancelTask(taskId) {
+            await fetch(`/api/downloads/queue/${taskId}`, {method: 'DELETE'});
+            await this.refresh();
+        },
+
+        async dismissTask(taskId) {
+            await fetch(`/api/downloads/queue/${taskId}/dismiss`, {method: 'DELETE'});
+            await this.refresh();
+        },
+
+        async dismissAllDone() {
+            const doneTasks = this.queue.filter(q =>
+                q.status === 'failed' || q.status === 'completed' || q.status === 'cancelled'
+            );
+            for (const t of doneTasks) {
+                await fetch(`/api/downloads/queue/${t.id}/dismiss`, {method: 'DELETE'});
+            }
+            await this.refresh();
+        },
+
+        async retryTask(item) {
+            await fetch(`/api/downloads/${item.jm_type === 'album' ? 'album' : 'photo'}/${item.jm_id}`, {method: 'POST'});
+            await this.refresh();
+        },
+
+        async clearHistory() {
+            if (!confirm('确定清空所有下载历史？')) return;
+            await fetch('/api/downloads/history', {method: 'DELETE'});
+            await this.refresh();
+        },
+
+        async cleanupStale() {
+            const resp = await fetch('/api/downloads/cleanup', {method: 'POST'});
+            const data = await resp.json();
+            if (data.cleaned > 0) {
+                alert(`已清理 ${data.cleaned} 个无效任务`);
+            } else {
+                alert('没有需要清理的任务');
+            }
+            await this.refresh();
+        },
+
+        statusText(s) {
+            const map = {
+                pending: '等待中',
+                downloading: '下载中',
+                completed: '已完成',
+                failed: '失败',
+                cancelled: '已取消',
+                success: '成功'
+            };
+            return map[s] || s;
+        },
+
+        formatTime(t) {
+            if (!t) return '-';
+            try {
+                const d = new Date(t);
+                const pad = n => String(n).padStart(2, '0');
+                return `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } catch (e) { return t; }
+        }
+    }
+}
+</script>
+{% endblock %}

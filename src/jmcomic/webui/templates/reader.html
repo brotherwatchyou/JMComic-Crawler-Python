@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" x-data="{ theme: localStorage.getItem('jm-theme') || 'dark' }" :data-theme="theme" x-init="$watch('theme', v => localStorage.setItem('jm-theme', v))">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>阅读 - JMComic WebUI</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="/static/vendor/alpine.min.js" defer></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        .layout-3col { display: flex; width: 100vw; height: 100vh; overflow: hidden; }
+        .layout-3col .sidebar { flex-shrink: 0; }
+        .layout-3col .chapter-panel { flex-shrink: 0; }
+        .layout-3col .reader-area { flex: 1; min-width: 0; }
+    </style>
+</head>
+<body>
+<div x-data="readerPage('{{ album_id }}', '{{ chapter_name }}')">
+<div class="layout-3col">
+
+    <!-- Mobile Topbar (hidden on desktop via CSS) -->
+    <div class="reader-topbar" :class="{ 'hidden': topbarHidden }">
+        <button class="reader-topbar-btn" @click="window.history.back()" title="返回">&#8592;</button>
+        <span class="reader-topbar-title" x-text="readerTitle"></span>
+        <span class="reader-topbar-counter" x-text="imageCounter"></span>
+        <button class="reader-topbar-btn" @click="drawerOpen = !drawerOpen" title="章节列表">&#9776;</button>
+    </div>
+
+    <!-- Column 1: Sidebar menu (desktop) -->
+    <nav class="sidebar" :class="{ 'collapsed': !sidebarOpen }">
+        <ul class="nav-links">
+            <li><a href="/"><span class="nav-link-icon">&#128218;</span><span class="nav-link-text">书架</span></a></li>
+            <li><a href="/downloads"><span class="nav-link-icon">&#11015;&#65039;</span><span class="nav-link-text">下载管理</span></a></li>
+            <li><a href="/search"><span class="nav-link-icon">&#128269;</span><span class="nav-link-text">搜索添加</span></a></li>
+            <li><a href="/settings"><span class="nav-link-icon">&#9881;&#65039;</span><span class="nav-link-text">设置</span></a></li>
+        </ul>
+        <div class="sidebar-footer">
+            <button class="theme-toggle" @click="theme = theme === 'dark' ? 'light' : 'dark'">
+                <span class="theme-toggle-icon" x-text="theme === 'dark' ? '&#9728;' : '&#9790;'"></span>
+                <span class="nav-link-text" x-text="theme === 'dark' ? '浅色模式' : '深色模式'"></span>
+            </button>
+            <button class="toggle-btn" @click="sidebarOpen = !sidebarOpen" :title="sidebarOpen ? '收起侧栏' : '展开侧栏'">
+                <span x-text="sidebarOpen ? '&#9664;' : '&#9654;'"></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Column 2: Chapter list -->
+    <div class="chapter-panel">
+        <div class="chapter-panel-header">
+            <h3 x-text="albumTitle || '加载中...'"></h3>
+            <button class="btn btn-sm btn-secondary" @click="sortAsc = !sortAsc"
+                    x-text="sortAsc ? '▲' : '▼'" title="切换排序"></button>
+        </div>
+        <div class="chapter-panel-list">
+            <template x-for="ch in sortedChapters" :key="ch.photo_id">
+                <div class="chapter-item"
+                     :class="{
+                         'active': ch.photo_id === currentChapter,
+                         'not-downloaded': !ch.is_downloaded
+                     }"
+                     @click="selectChapter(ch)">
+                    <div class="chapter-item-row">
+                        <span class="chapter-item-title" x-text="ch.title || ch.photo_id"></span>
+                        <span x-show="ch.is_downloaded && ch.photo_id !== currentChapter"
+                              class="chapter-item-badge" style="background:var(--success);color:#fff;">&#10003;</span>
+                        <span x-show="ch.photo_id === currentChapter"
+                              class="chapter-item-badge" style="background:var(--primary);color:#fff;">&#9654;</span>
+                        <span x-show="!ch.is_downloaded"
+                              class="chapter-item-badge" style="background:var(--border);color:var(--text-muted);">&#8595;</span>
+                    </div>
+                    <div x-show="ch.photo_id === currentChapter && images.length > 0"
+                         class="chapter-item-progress">
+                        <div class="chapter-item-progress-fill"
+                             :style="`width: ${chapterProgressPct}%`"></div>
+                    </div>
+                </div>
+            </template>
+            <p x-show="chapters.length === 0 && !loadingChapters" class="text-muted"
+               style="padding: 1rem; font-size: 0.85rem;">暂无章节</p>
+        </div>
+    </div>
+
+    <!-- Column 3: Reader content -->
+    <div class="reader-area">
+        <div class="reader-header">
+            <span class="reader-header-title" x-text="readerTitle"></span>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                <span x-text="imageCounter" style="color:var(--text-muted); font-size:0.8rem;"></span>
+                <div class="reader-width-control">
+                    <label style="color:var(--text-muted); font-size:0.75rem;">宽度</label>
+                    <input type="range" min="50" max="100" x-model="imageWidth" class="reader-width-slider">
+                    <span style="color:var(--text-muted); font-size:0.75rem;" x-text="imageWidth + '%'"></span>
+                </div>
+                <button class="btn btn-sm btn-secondary" @click="loadNextChapter()"
+                        x-show="nextChapter && !loadingImages" x-text="'下一章'"></button>
+            </div>
+        </div>
+        <div class="reader-scroll" @scroll="onScroll()" x-ref="scrollContainer">
+            <template x-for="(img, idx) in images" :key="currentChapter + '-' + idx">
+                <img :src="`/api/browse/images/${albumId}/${currentChapter}/${img}`"
+                     :alt="`Page ${idx + 1}`"
+                     class="reader-scroll-img"
+                     :style="`max-width: ${imageWidth}%`"
+                     loading="lazy"
+                     x-intersect:enter="onImageVisible(idx)">
+            </template>
+
+            <div class="reader-end" x-show="images.length > 0">
+                <template x-if="nextChapter">
+                    <button class="btn btn-primary" @click="loadNextChapter()"
+                            :disabled="loadingImages">
+                        <span x-text="loadingImages ? '加载中...' : `继续: ${nextChapterTitle}`"></span>
+                    </button>
+                </template>
+                <template x-if="!nextChapter">
+                    <p class="text-muted">已是最后一章</p>
+                </template>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Mobile chapter drawer (hidden on desktop via CSS) -->
+<div class="reader-drawer-overlay" :class="{ 'open': drawerOpen }" @click="drawerOpen = false"></div>
+<div class="reader-drawer" :class="{ 'open': drawerOpen }">
+    <div class="reader-drawer-handle" @click="drawerOpen = false"></div>
+    <div class="reader-drawer-header">
+        <h3 x-text="albumTitle || '章节列表'"></h3>
+        <button class="btn btn-sm btn-secondary" @click="sortAsc = !sortAsc"
+                x-text="sortAsc ? '▲' : '▼'" title="切换排序"></button>
+    </div>
+    <div class="reader-drawer-list">
+        <template x-for="ch in sortedChapters" :key="ch.photo_id">
+            <div class="chapter-item"
+                 :class="{
+                     'active': ch.photo_id === currentChapter,
+                     'not-downloaded': !ch.is_downloaded
+                 }"
+                 @click="selectChapter(ch); if(isMobile) drawerOpen = false">
+                <div class="chapter-item-row">
+                    <span class="chapter-item-title" x-text="ch.title || ch.photo_id"></span>
+                    <span x-show="ch.is_downloaded && ch.photo_id !== currentChapter"
+                          class="chapter-item-badge" style="background:var(--success);color:#fff;">&#10003;</span>
+                    <span x-show="ch.photo_id === currentChapter"
+                          class="chapter-item-badge" style="background:var(--primary);color:#fff;">&#9654;</span>
+                    <span x-show="!ch.is_downloaded"
+                          class="chapter-item-badge" style="background:var(--border);color:var(--text-muted);">&#8595;</span>
+                </div>
+            </div>
+        </template>
+        <p x-show="chapters.length === 0 && !loadingChapters" class="text-muted"
+           style="padding: 1rem; font-size: 0.85rem;">暂无章节</p>
+    </div>
+</div>
+
+</div>
+
+<script>
+function readerPage(albumId, initialChapter) {
+    return {
+        albumId,
+        currentChapter: initialChapter || '',
+        albumTitle: '',
+        chapters: [],
+        sortAsc: true,
+        images: [],
+        loadingImages: false,
+        loadingChapters: false,
+        visibleImageIdx: 0,
+        sidebarOpen: true,
+        imageWidth: parseInt(localStorage.getItem('reader-image-width') || '85'),
+        drawerOpen: false,
+        topbarHidden: false,
+        _lastScrollTop: 0,
+        _topbarTimer: null,
+
+        get sortedChapters() {
+            const sorted = [...this.chapters].sort((a, b) => {
+                // Sort by photo_id (larger = newer)
+                const idA = parseInt(a.photo_id) || 0;
+                const idB = parseInt(b.photo_id) || 0;
+                return idA - idB;
+            });
+            return this.sortAsc ? sorted : sorted.reverse();
+        },
+        get nextChapter() {
+            const sorted = this.sortedChapters;
+            const currentInSorted = sorted.findIndex(ch => ch.photo_id === this.currentChapter);
+            return currentInSorted + 1 < sorted.length ? sorted[currentInSorted + 1] : null;
+        },
+        get nextChapterTitle() {
+            return this.nextChapter ? (this.nextChapter.title || this.nextChapter.photo_id) : '';
+        },
+        get readerTitle() {
+            const ch = this.chapters.find(c => c.photo_id === this.currentChapter);
+            return ch ? (ch.title || ch.photo_id) : '';
+        },
+        get imageCounter() {
+            if (this.images.length === 0) return '';
+            return `${this.visibleImageIdx + 1} / ${this.images.length}`;
+        },
+        get chapterProgressPct() {
+            if (this.images.length === 0) return 0;
+            return Math.round(((this.visibleImageIdx + 1) / this.images.length) * 100);
+        },
+        get isMobile() {
+            return window.innerWidth <= 768;
+        },
+
+        async init() {
+            // Save image width preference
+            this.$watch('imageWidth', v => localStorage.setItem('reader-image-width', v));
+            await this.loadChapterList();
+            if (this.currentChapter) {
+                await this.loadImages();
+            } else if (this.chapters.length > 0) {
+                const first = this.sortedChapters.find(ch => ch.is_downloaded);
+                if (first) await this.selectChapter(first);
+            }
+        },
+
+        async loadChapterList() {
+            this.loadingChapters = true;
+            try {
+                const resp = await fetch(`/api/browse/albums/${albumId}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    this.albumTitle = data.title || albumId;
+                    this.chapters = data.chapters || [];
+                }
+            } catch (e) {} finally { this.loadingChapters = false; }
+        },
+
+        async selectChapter(ch) {
+            if (!ch.is_downloaded) {
+                await fetch(`/api/downloads/photo/${ch.photo_id}`, {method: 'POST'});
+                return;
+            }
+            this.currentChapter = ch.photo_id;
+            this.images = [];
+            this.visibleImageIdx = 0;
+            this.$refs.scrollContainer && (this.$refs.scrollContainer.scrollTop = 0);
+            // Update URL without page reload
+            history.pushState({}, '', `/reader/${this.albumId}/${ch.photo_id}`);
+            await this.loadImages();
+        },
+
+        async loadImages() {
+            this.loadingImages = true;
+            try {
+                const resp = await fetch(`/api/browse/albums/${albumId}/chapters/${this.currentChapter}/images`);
+                if (resp.ok) {
+                    this.images = await resp.json();
+                }
+            } catch (e) {} finally { this.loadingImages = false; }
+        },
+
+        async loadNextChapter() {
+            const next = this.nextChapter;
+            if (!next || !next.is_downloaded) return;
+            this.currentChapter = next.photo_id;
+            this.images = [];
+            this.visibleImageIdx = 0;
+            history.pushState({}, '', `/reader/${this.albumId}/${next.photo_id}`);
+            await this.loadImages();
+            this.$nextTick(() => {
+                this.$refs.scrollContainer && (this.$refs.scrollContainer.scrollTop = 0);
+            });
+        },
+
+        onImageVisible(idx) {
+            if (idx >= this.visibleImageIdx) {
+                this.visibleImageIdx = idx;
+            }
+        },
+
+        onScroll() {
+            const el = this.$refs.scrollContainer;
+            if (!el || this.images.length === 0) return;
+
+            // Update visible image index
+            const imgs = el.querySelectorAll('.reader-scroll-img');
+            for (let i = imgs.length - 1; i >= 0; i--) {
+                if (imgs[i].getBoundingClientRect().top <= el.getBoundingClientRect().top + 100) {
+                    this.visibleImageIdx = i;
+                    break;
+                }
+            }
+
+            // Mobile: auto-hide topbar on scroll
+            if (this.isMobile && !this.drawerOpen) {
+                const scrollTop = el.scrollTop;
+                const delta = scrollTop - this._lastScrollTop;
+                if (delta > 10 && scrollTop > 60) {
+                    // Scrolling down - hide
+                    this.topbarHidden = true;
+                    clearTimeout(this._topbarTimer);
+                } else if (delta < -10) {
+                    // Scrolling up - show
+                    this.topbarHidden = false;
+                    clearTimeout(this._topbarTimer);
+                }
+                this._lastScrollTop = scrollTop;
+
+                // Show after 2s idle
+                clearTimeout(this._topbarTimer);
+                this._topbarTimer = setTimeout(() => {
+                    this.topbarHidden = false;
+                }, 2000);
+            }
+        },
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}登录 - JMComic WebUI{% endblock %}
+{% block content %}
+<div class="login-container" x-data="loginForm()">
+    <div class="login-card">
+        <h2>JMComic WebUI</h2>
+        <form @submit.prevent="submitLogin">
+            <div class="form-group">
+                <label>用户名</label>
+                <input type="text" x-model="username" required placeholder="JM账号" autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label>密码</label>
+                <input type="password" x-model="password" required placeholder="密码" autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
+                <span x-show="!loading">登录</span>
+                <span x-show="loading">登录中...</span>
+            </button>
+            <p class="error-msg" x-show="error" x-text="error"></p>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function loginForm() {
+    return {
+        username: '',
+        password: '',
+        loading: false,
+        error: '',
+        async submitLogin() {
+            this.loading = true;
+            this.error = '';
+            try {
+                const resp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: this.username, password: this.password})
+                });
+                const data = await resp.json();
+                if (resp.ok && data.ok) {
+                    window.location.href = '/';
+                } else {
+                    this.error = data.detail || '登录失败';
+                }
+            } catch (e) {
+                this.error = '网络错误';
+            } finally {
+                this.loading = false;
+            }
+        }
+    }
+}
+</script>
+{% endblock %}
