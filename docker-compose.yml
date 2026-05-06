@@ -3,16 +3,16 @@ services:
     build: .
     container_name: jmcomic
     ports:
-      - "9801:9801"
+      - "${JM_WEBUI_PORT:-9801}:9801"
     volumes:
-      - jmcomic_data:/data
-      - jmcomic_downloads:/downloads
+      - ${JM_DATA_DIR:-jmcomic_data}:/data
+      - ${JM_DOWNLOAD_DIR:-jmcomic_downloads}:/downloads
       # 可选：挂载自定义配置文件
       # - ./my_option.yml:/app/assets/option/option_docker.yml:ro
     environment:
       - JM_DATA_DIR=/data
       - JM_DOWNLOAD_DIR=/downloads
-      - JM_OPTION_PATH=/app/assets/option/option_docker.yml
+      - JM_WEBUI_PASSWORD=${JM_WEBUI_PASSWORD:-}
     restart: unless-stopped
 
 volumes:
