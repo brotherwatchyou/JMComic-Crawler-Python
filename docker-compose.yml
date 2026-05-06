@@ -1,0 +1,22 @@
+services:
+  jmcomic:
+    build: .
+    container_name: jmcomic
+    ports:
+      - "9801:9801"
+    volumes:
+      - jmcomic_data:/data
+      - jmcomic_downloads:/downloads
+      # 可选：挂载自定义配置文件
+      # - ./my_option.yml:/app/assets/option/option_docker.yml:ro
+    environment:
+      - JM_DATA_DIR=/data
+      - JM_DOWNLOAD_DIR=/downloads
+      - JM_OPTION_PATH=/app/assets/option/option_docker.yml
+    restart: unless-stopped
+
+volumes:
+  jmcomic_data:
+    driver: local
+  jmcomic_downloads:
+    driver: local

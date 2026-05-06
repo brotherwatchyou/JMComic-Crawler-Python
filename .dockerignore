@@ -1,0 +1,16 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+
+# Downloaded manga (keep them out of the image)
+downloads/
+【*
+[*

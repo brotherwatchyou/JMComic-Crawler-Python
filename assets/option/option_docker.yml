@@ -1,0 +1,16 @@
+# Docker 默认配置
+# 通过环境变量 JM_DOWNLOAD_DIR 和 JM_DATA_DIR 控制路径
+dir_rule:
+  rule: Bd_Aid_Pindextitle
+
+client:
+  impl: api
+  retry_times: 3
+
+plugins:
+  main:
+    - plugin: jm_webui
+      kwargs:
+        host: 0.0.0.0
+        port: 9801
+        debug: false

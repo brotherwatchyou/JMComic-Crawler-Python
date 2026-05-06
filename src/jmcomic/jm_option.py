@@ -66,6 +66,9 @@ class DirRule:
         :param base_dir: base directory
         :param normalize_zh: 'zh-cn'|'zh-tw'| or None. 控制是否以及如何进行繁简体归一化，默认 None
         """
+        if base_dir is None:
+            import os
+            base_dir = os.environ.get('JM_DOWNLOAD_DIR', None)
         base_dir = JmcomicText.parse_to_abspath(base_dir)
         self.base_dir = base_dir
         self.rule_dsl = rule
